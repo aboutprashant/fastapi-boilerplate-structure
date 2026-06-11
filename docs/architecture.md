@@ -1,10 +1,32 @@
-# Architecture
+# ai-platform Architecture
 
-This boilerplate keeps the RAG workflow small and replaceable.
+This repository is a monorepo of standalone services. Every directory under `services/`
+is a complete FastAPI application with its own dependency graph, lockfile, Dockerfile,
+tests, and environment configuration.
 
-1. API routes receive ingestion or query requests.
-2. `RagService` coordinates chunking, embedding, storage, retrieval, and answer generation.
-3. `EmbeddingProvider`, `VectorStore`, and `AnswerGenerator` are interfaces that can be replaced with production providers.
-4. Logging, health checks, readiness checks, and Prometheus metrics are configured at the app boundary.
+Services communicate over HTTP only. They do not import code from each other. The only
+shared Python package is `shared/contracts`, which contains Pydantic schemas and no
+business logic.
 
-The default implementation is useful for local development, CI, and proving the API contract. Production deployments should back the vector store with a persistent database and use provider-backed embeddings and generation.
+Chat request flow:
+
+```text
+Client
+  |
+  v
+assistant-gateway /api/v1/chat
+  |
+  +--> classify intent
+  |
+  +--> knowledge-base /api/v1/search       (document retrieval)
+  |
+  +--> data-analytics /api/v1/nl2sql/query (analytics intent)
+  |
+  +--> report-generator /api/v1/reports/generate (report generation intent)
+  v
+synthesize answer with citations
+  |
+  v
+Client
+```
+

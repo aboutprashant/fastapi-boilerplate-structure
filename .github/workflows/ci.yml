@@ -6,8 +6,67 @@ on:
   pull_request:
 
 jobs:
-  test:
+  changes:
     runs-on: ubuntu-latest
+    outputs:
+      any_changed: ${{ steps.matrix.outputs.any_changed }}
+      matrix: ${{ steps.matrix.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            knowledge-base:
+              - 'services/knowledge-base/**'
+              - 'shared/contracts/**'
+            report-generator:
+              - 'services/report-generator/**'
+              - 'shared/contracts/**'
+            data-analytics:
+              - 'services/data-analytics/**'
+              - 'shared/contracts/**'
+            assistant-gateway:
+              - 'services/assistant-gateway/**'
+              - 'shared/contracts/**'
+      - name: Build service matrix
+        id: matrix
+        shell: bash
+        run: |
+          services=()
+          if [[ "${{ steps.filter.outputs['knowledge-base'] }}" == "true" ]]; then
+            services+=('{"service":"knowledge-base"}')
+          fi
+          if [[ "${{ steps.filter.outputs['report-generator'] }}" == "true" ]]; then
+            services+=('{"service":"report-generator"}')
+          fi
+          if [[ "${{ steps.filter.outputs['data-analytics'] }}" == "true" ]]; then
+            services+=('{"service":"data-analytics"}')
+          fi
+          if [[ "${{ steps.filter.outputs['assistant-gateway'] }}" == "true" ]]; then
+            services+=('{"service":"assistant-gateway"}')
+          fi
+
+          if [[ "${#services[@]}" -eq 0 ]]; then
+            echo 'any_changed=false' >> "$GITHUB_OUTPUT"
+            echo 'matrix={"include":[{"service":"knowledge-base"}]}' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          joined=$(IFS=,; echo "${services[*]}")
+          echo 'any_changed=true' >> "$GITHUB_OUTPUT"
+          echo "matrix={\"include\":[${joined}]}" >> "$GITHUB_OUTPUT"
+
+  test:
+    needs: changes
+    runs-on: ubuntu-latest
+    if: ${{ needs.changes.outputs.any_changed == 'true' }}
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.changes.outputs.matrix) }}
+    defaults:
+      run:
+        working-directory: services/${{ matrix.service }}
     steps:
       - uses: actions/checkout@v4
       - name: Install uv
@@ -15,7 +74,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version-file: ".python-version"
+          python-version: "3.11"
       - name: Install dependencies
         run: uv sync
       - name: Lint
